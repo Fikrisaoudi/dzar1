@@ -1,0 +1,69 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Video Match</title>
+    <link rel="stylesheet" href="/styles.css" />
+  </head>
+  <body>
+    <main class="shell">
+      <section class="call-panel" aria-label="Video chat">
+        <div class="brand-row">
+          <div>
+            <p class="eyebrow">Random video chat</p>
+            <h1>Video Match</h1>
+          </div>
+          <span id="connectionBadge" class="badge">Connecting</span>
+        </div>
+
+        <div class="profile-grid">
+          <label>
+            Display name
+            <input id="nameInput" autocomplete="nickname" maxlength="24" placeholder="Guest" />
+          </label>
+          <label>
+            Region
+            <input id="regionInput" autocomplete="country-name" maxlength="32" placeholder="Australia" />
+          </label>
+        </div>
+
+        <div class="stage">
+          <video id="remoteVideo" class="remote-video" autoplay playsinline></video>
+          <video id="localVideo" class="local-video" autoplay muted playsinline></video>
+          <div id="emptyState" class="empty-state">
+            <div class="avatar" id="avatar">VM</div>
+            <p id="statusText" class="status">Ready when you are.</p>
+            <p id="peerText" class="peer">Tap start to meet someone by video.</p>
+          </div>
+        </div>
+
+        <div class="meter" aria-label="Microphone level">
+          <span id="levelBar"></span>
+        </div>
+
+        <div class="controls">
+          <button id="startBtn" class="primary">Start</button>
+          <button id="muteBtn" disabled>Mute</button>
+          <button id="cameraBtn" disabled>Camera</button>
+          <button id="skipBtn" disabled>Skip</button>
+          <button id="stopBtn" disabled>Stop</button>
+        </div>
+
+      </section>
+
+      <aside class="side-panel" aria-label="Safety and deployment notes">
+        <h2>Built for live video</h2>
+        <ul>
+          <li>Random one-to-one matching queue.</li>
+          <li>WebRTC camera and microphone calls with Socket.IO signaling.</li>
+          <li>Skip, mute, stop, reconnect, and peer-left handling.</li>
+          <li>Ready for Render with the included service config.</li>
+        </ul>
+      </aside>
+    </main>
+
+    <script src="/socket.io/socket.io.js"></script>
+    <script src="/app.js"></script>
+  </body>
+</html>

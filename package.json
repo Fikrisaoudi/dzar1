@@ -1,0 +1,27 @@
+{
+  "name": "voice-match",
+  "version": "1.0.0",
+  "description": "A Render-ready random video chat app with WebRTC calls.",
+  "main": "server.js",
+  "scripts": {
+    "start": "node server.js",
+    "dev": "node --watch server.js"
+  },
+  "dependencies": {
+    "express": "^4.18.3",
+    "socket.io": "^4.7.5"
+  },
+  "engines": {
+    "node": ">=20"
+  },
+  "keywords": [
+    "webrtc",
+    "video-chat",
+    "socket.io",
+    "render"
+  ],
+  "license": "MIT",
+  "devDependencies": {
+    "socket.io-client": "^4.8.3"
+  }
+}
