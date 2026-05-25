@@ -18,6 +18,9 @@ const remoteVideo = document.querySelector("#remoteVideo");
 
 let localStream;
 let peerConnection;
+let peerConnectionPromise = null;
+let remoteIceCandidatesQueue = [];
+let currentPeer = null;
 let analyser;
 let audioLevelFrame;
 let isMuted = false;
@@ -27,6 +30,10 @@ let currentState = "idle";
 const rtcConfig = {
   iceServers: [
     { urls: "stun:stun.l.google.com:19302" },
+    { urls: "stun:stun1.l.google.com:19302" },
+    { urls: "stun:stun2.l.google.com:19302" },
+    { urls: "stun:stun3.l.google.com:19302" },
+    { urls: "stun:stun4.l.google.com:19302" },
     { urls: "stun:global.stun.twilio.com:3478" }
   ]
 };
@@ -112,19 +119,64 @@ function closePeerConnection() {
   if (peerConnection) {
     peerConnection.onicecandidate = null;
     peerConnection.ontrack = null;
+    peerConnection.onconnectionstatechange = null;
+    peerConnection.oniceconnectionstatechange = null;
     peerConnection.close();
     peerConnection = null;
   }
+  peerConnectionPromise = null;
+  remoteIceCandidatesQueue = [];
 
   remoteVideo.srcObject = null;
   remoteVideo.classList.remove("visible");
   emptyState.classList.remove("in-call");
 }
 
+function stopLocalStream() {
+  if (localStream) {
+    localStream.getTracks().forEach((track) => track.stop());
+    localStream = null;
+  }
+  localVideo.srcObject = null;
+  localVideo.classList.remove("visible");
+
+  if (audioLevelFrame) {
+    cancelAnimationFrame(audioLevelFrame);
+    audioLevelFrame = null;
+  }
+  levelBar.style.width = "0%";
+}
+
 async function createPeerConnection(role) {
   closePeerConnection();
 
   peerConnection = new RTCPeerConnection(rtcConfig);
+
+  // Setup connection state logging and management
+  peerConnection.onconnectionstatechange = () => {
+    console.log("Connection state change:", peerConnection.connectionState);
+    switch (peerConnection.connectionState) {
+      case "connected":
+        if (currentPeer) {
+          setStatus("Connected", `${currentPeer.name} from ${currentPeer.region}`);
+        }
+        break;
+      case "disconnected":
+      case "failed":
+        resetCall("Connection lost", "The peer-to-peer connection was lost.");
+        break;
+      default:
+        break;
+    }
+  };
+
+  peerConnection.oniceconnectionstatechange = () => {
+    console.log("ICE connection state change:", peerConnection.iceConnectionState);
+    if (peerConnection.iceConnectionState === "failed") {
+      resetCall("Connection lost", "The peer-to-peer connection could not be established.");
+    }
+  };
+
   const stream = await ensureMedia();
 
   stream.getTracks().forEach((track) => {
@@ -153,25 +205,58 @@ async function createPeerConnection(role) {
 
 async function handleSignal(payload) {
   const data = payload.data;
+  
+  // Wait for peerConnection creation if it's already in progress or initialize it
+  if (peerConnectionPromise) {
+    await peerConnectionPromise;
+  } else if (!peerConnection) {
+    peerConnectionPromise = createPeerConnection("callee");
+    await peerConnectionPromise;
+  }
+
   if (!peerConnection) {
-    await createPeerConnection("callee");
+    throw new Error("Peer connection was not initialized properly");
   }
 
   if (data.type === "offer") {
-    await peerConnection.setRemoteDescription(data.description);
+    await peerConnection.setRemoteDescription(new RTCSessionDescription(data.description));
     const answer = await peerConnection.createAnswer();
     await peerConnection.setLocalDescription(answer);
     socket.emit("signal", { type: "answer", description: peerConnection.localDescription });
+    
+    await processQueuedCandidates();
     return;
   }
 
   if (data.type === "answer") {
-    await peerConnection.setRemoteDescription(data.description);
+    await peerConnection.setRemoteDescription(new RTCSessionDescription(data.description));
+    
+    await processQueuedCandidates();
     return;
   }
 
   if (data.type === "candidate" && data.candidate) {
-    await peerConnection.addIceCandidate(data.candidate);
+    if (peerConnection.remoteDescription && peerConnection.remoteDescription.type) {
+      try {
+        await peerConnection.addIceCandidate(new RTCIceCandidate(data.candidate));
+      } catch (e) {
+        console.warn("Failed to add ICE candidate:", e);
+      }
+    } else {
+      remoteIceCandidatesQueue.push(data.candidate);
+    }
+  }
+}
+
+async function processQueuedCandidates() {
+  if (!peerConnection) return;
+  while (remoteIceCandidatesQueue.length > 0) {
+    const candidate = remoteIceCandidatesQueue.shift();
+    try {
+      await peerConnection.addIceCandidate(new RTCIceCandidate(candidate));
+    } catch (e) {
+      console.warn("Failed to add queued ICE candidate:", e);
+    }
   }
 }
 
@@ -190,6 +275,14 @@ async function startSearch() {
 
 function resetCall(message = "Ready when you are.", detail = "Tap start to meet someone by video.") {
   closePeerConnection();
+  stopLocalStream();
+  
+  isMuted = false;
+  isCameraOff = false;
+  muteBtn.textContent = "Mute";
+  cameraBtn.textContent = "Camera";
+  localVideo.classList.remove("camera-off");
+
   setStatus(message, detail);
   avatar.textContent = initials(nameInput.value || "Video Match");
   setControls("idle");
@@ -254,14 +347,17 @@ socket.on("queued", ({ position }) => {
 });
 
 socket.on("matched", async ({ role, peer }) => {
+  currentPeer = peer;
   avatar.textContent = initials(peer.name);
-  setStatus("Connected", `${peer.name} from ${peer.region}`);
+  setStatus("Connecting...", `Establishing secure line with ${peer.name}...`);
   setControls("matched");
-  await createPeerConnection(role);
+  peerConnectionPromise = createPeerConnection(role);
+  await peerConnectionPromise;
 });
 
 socket.on("signal", (payload) => {
-  handleSignal(payload).catch(() => {
+  handleSignal(payload).catch((err) => {
+    console.error("Signal handling error:", err);
     resetCall("Call failed", "The voice connection could not be established.");
   });
 });
